@@ -13,7 +13,7 @@ add_subdirectory(nlohmann/json)
 
 # options
 option(JSON_V_BuildExample "Build example" OFF)
-# option(JSON_V_BuildTests "Build tests" OFF)
+option(JSON_V_BuildTests "Build tests" ON)
 
 # configs
 include(GNUInstallDirs)
@@ -37,8 +37,8 @@ if (JSON_V_BuildExample)
 endif()
 
 # tests
-# if (JSON_V_BuildTests)
-#   include(CTest)
-#   enable_testing()
-#   add_subdirectory(tests)
-# endif()
+if (JSON_V_BuildTests)
+  include(CTest)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
