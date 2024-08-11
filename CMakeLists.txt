@@ -12,8 +12,8 @@ set(JSON_Install OFF CACHE INTERNAL "")
 add_subdirectory(nlohmann/json)
 
 # options
+option(JSON_V_BuildExample "Build example" OFF)
 # option(JSON_V_BuildTests "Build tests" OFF)
-# option(JSON_V_BuildExample "Build example" OFF)
 
 # configs
 include(GNUInstallDirs)
@@ -32,9 +32,9 @@ target_link_libraries(${JSON_V_TARGET_NAME}
   INTERFACE
     nlohmann_json::nlohmann_json)
 
-# if (JSON_V_BuildExample)
-#   add_subdirectory(example)
-# endif()
+if (JSON_V_BuildExample)
+  add_subdirectory(example)
+endif()
 
 # tests
 # if (JSON_V_BuildTests)

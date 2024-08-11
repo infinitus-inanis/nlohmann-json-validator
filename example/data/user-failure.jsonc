@@ -1,0 +1,11 @@
+{
+  "id": -1,                // fail: is not 'unsinged_number'
+  "name": null,            // fail: is not 'string'
+  // "surname": "Andalie", // pass: is optional
+  "auth": {
+    "nick": "atom"         // pass
+    // "pass": "none"      // fail: is required
+  },
+  "enabled": false,        // pass
+  "ignored": null          // skip
+}

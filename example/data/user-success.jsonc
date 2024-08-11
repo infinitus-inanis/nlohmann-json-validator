@@ -1,0 +1,10 @@
+{
+  "id": 0,
+  "name": "Tom",
+  "surname": "Andalie",
+  "auth": {
+    "nick": "atom",
+    "pass": "none"
+  },
+  "enabled": true
+}
