@@ -32,6 +32,7 @@ target_link_libraries(${JSON_V_TARGET_NAME}
   INTERFACE
     nlohmann_json::nlohmann_json)
 
+# example
 if (JSON_V_BuildExample)
   add_subdirectory(example)
 endif()
