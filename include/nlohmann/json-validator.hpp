@@ -151,13 +151,13 @@ enum struct rule_t {
 
 struct rule_base {
   constexpr virtual rule_t type() const { return rule_t::custom; }
-  virtual bool operator() (const nlohmann::json &json, errors_collector_t &&errors) const = 0;
+  virtual bool operator() (const nlohmann::json &json, errors_collector_t &errors) const = 0;
 };
 
 struct size_rule : public rule_base {
   size_rule(size_t size) : _size{size} {}
 
-  bool operator() (const nlohmann::json &json, errors_collector_t &&errors) const override {
+  bool operator() (const nlohmann::json &json, errors_collector_t &errors) const override {
     if (json.size() == _size)
       return true;
 
@@ -176,7 +176,7 @@ private:
 struct type_rule : public rule_base {
   type_rule(value_t type) : _type{type} {}
 
-  bool operator() (const nlohmann::json &json, errors_collector_t &&errors) const override {
+  bool operator() (const nlohmann::json &json, errors_collector_t &errors) const override {
     if (json.type() == _type)
       return true;
 
@@ -193,19 +193,21 @@ private:
 };
 
 struct processor {
+private:
   processor(processor *owner, const std::string &name)
     : _owner{owner}
     , _pointer{owner->_pointer}
     , _optional{false}
   { _pointer.push_back(name); }
 
+public:
   processor()
     : _owner{nullptr}
     , _optional{false}
   {}
 
   processor & with_value(const std::string &name) {
-    auto &&[it, emplaced] = _sub_processors.try_emplace(name, std::make_unique<processor>(this, name));
+    auto &&[it, emplaced] = _sub_processors.try_emplace(name, new processor(this, name));
     return *it->second;
   }
 
@@ -231,7 +233,7 @@ struct processor {
 
   template<typename TRule, typename ...TArgs>
   processor & with_rule(TArgs &&...args) {
-    _rules.push_back(std::make_unique<TRule>(std::forward<TArgs>(args)...));
+    _rules.emplace_back(new TRule(std::forward<TArgs>(args)...));
     return *this;
   }
 
@@ -253,14 +255,16 @@ struct processor {
   }
 
   bool exec(const nlohmann::json &json, errors_map_t &errors) {
+    errors_collector_t collector{_pointer, errors};
+
     for (auto &&rule : _rules)
-      (*rule)(json, errors_collector_t{_pointer, errors});
+      (*rule)(json, collector);
 
     for (auto &&[sub_key, sub_processor] : _sub_processors) {
       if (!json.contains(sub_key)) {
         if (!sub_processor->_optional)
-          errors_collector_t{_pointer, errors}
-            .emplace_stream("missing required value: ", std::quoted(sub_key));
+          collector.emplace_stream("missing required value: ", std::quoted(sub_key));
+
         continue;
       }
       auto &&sub_json = json.at(sub_key);
