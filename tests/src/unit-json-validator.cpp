@@ -72,7 +72,7 @@ TEST_CASE("object value (single)") {
 
     auto &&[pointer, errors] = *errors_map.begin();
     REQUIRE_EQ(errors.size(), 1);
-    REQUIRE_THROWS(test.at(pointer));
+    REQUIRE_NOTHROW(test.at(pointer));
   }
 
   SECTION("subcase optional (success)") {
@@ -124,8 +124,7 @@ TEST_CASE("multiple object values (nested)") {
 
     auto &&[pointer, errors] = *errors_map.begin();
     REQUIRE_EQ(errors.size(), 1);
-    REQUIRE_THROWS(test.at(pointer));
-    REQUIRE_NOTHROW(test.at(pointer.parent_pointer()));
+    REQUIRE_NOTHROW(test.at(pointer));
   }
 }
 

@@ -2,7 +2,6 @@
 #define INCLUDE_NLOHMANN_JSON_VALIDATOR_HPP_
 
 #include <nlohmann/json.hpp>
-#include <ostream>
 
 namespace nlohmann::detail {
   void concat_stream_impl(std::stringstream &) {
@@ -119,18 +118,29 @@ private:
 using errors_t = std::vector<error_t>;
 using errors_map_t = std::map<json::json_pointer, errors_t>;
 
+struct processor;
 struct errors_collector_t {
-  errors_collector_t(errors_t &errors)
-    : _errors{errors}
-  {}
+  void emplace(std::string message) {
+    auto &&[it, _0] = _errors.try_emplace(_pointer);
+    auto &&[_1, errors] = *it;
+    errors.emplace_back(std::move(message));
+  }
 
   template<typename ...TArgs>
-  void emplace_concat(TArgs &&...args) {
-    _errors.emplace_back(detail::concat_stream(std::forward<TArgs>(args)...));
+  void emplace_stream(TArgs &&...args) {
+    emplace(detail::concat_stream(std::forward<TArgs>(args)...));
   }
 
 private:
-  errors_t &_errors;
+  friend processor;
+  errors_collector_t(const json::json_pointer &pointer, errors_map_t &errors)
+    : _pointer{pointer}
+    , _errors{errors}
+  {}
+
+private:
+  const json::json_pointer &_pointer;
+  errors_map_t             &_errors;
 };
 
 enum struct rule_t {
@@ -151,7 +161,7 @@ struct size_rule : public rule_base {
     if (json.size() == _size)
       return true;
 
-    errors.emplace_concat("missing required size: ", _size);
+    errors.emplace_stream("missing required size: ", _size);
     return false;
   }
 
@@ -170,7 +180,7 @@ struct type_rule : public rule_base {
     if (json.type() == _type)
       return true;
 
-    errors.emplace_concat("missing required type: ", value_type_name(_type));
+    errors.emplace_stream("missing required type: ", std::quoted(value_type_name(_type)));
     return false;
   }
 
@@ -242,25 +252,21 @@ struct processor {
     return *this;
   }
 
-  bool exec(const nlohmann::json &json, errors_map_t &out_errors) {
-    errors_t errors;
+  bool exec(const nlohmann::json &json, errors_map_t &errors) {
     for (auto &&rule : _rules)
-      (*rule)(json, errors_collector_t{errors});
-
-    if (!errors.empty())
-      out_errors[_pointer] = std::move(errors);
+      (*rule)(json, errors_collector_t{_pointer, errors});
 
     for (auto &&[sub_key, sub_processor] : _sub_processors) {
       if (!json.contains(sub_key)) {
         if (!sub_processor->_optional)
-          errors_collector_t{out_errors[sub_processor->_pointer]}
-            .emplace_concat("is required value");
+          errors_collector_t{_pointer, errors}
+            .emplace_stream("missing required value: ", std::quoted(sub_key));
         continue;
       }
       auto &&sub_json = json.at(sub_key);
-      sub_processor->exec(sub_json, out_errors);
+      sub_processor->exec(sub_json, errors);
     }
-    return out_errors.empty();
+    return errors.empty();
   }
 
   bool exec(const nlohmann::json &json) {
