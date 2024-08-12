@@ -3,7 +3,7 @@
   "name": null,            // fail: is not 'string'
   // "surname": "Andalie", // pass: is optional
   "auth": {
-    "nick": "atom"         // pass
+    "nick": "miss"         // fail: is not in provided set
     // "pass": "none"      // fail: is required
   },
   "enabled": false,        // pass
