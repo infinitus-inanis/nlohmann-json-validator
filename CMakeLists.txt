@@ -13,7 +13,7 @@ add_subdirectory(nlohmann/json)
 
 # options
 option(JSON_V_BuildExample "Build example" OFF)
-option(JSON_V_BuildTests "Build tests" ON)
+option(JSON_V_BuildTests "Build tests" OFF)
 
 # configs
 include(GNUInstallDirs)
