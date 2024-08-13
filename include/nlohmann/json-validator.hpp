@@ -2,6 +2,7 @@
 #define INCLUDE_NLOHMANN_JSON_VALIDATOR_HPP_
 
 #include <nlohmann/json.hpp>
+#include <unordered_set>
 
 namespace nlohmann::detail {
   void concat_stream_impl(std::stringstream &) {
@@ -26,6 +27,21 @@ namespace nlohmann::detail {
     concat_stream_impl(ss, std::forward<TArgs>(args)...);
     return ss.str();
   }
+
+  template<typename _Container>
+  std::string to_string_streamed(const _Container &__container, const std::string &__delimiter = ", ") {
+    std::stringstream ss;
+    bool first = true;
+    for (auto &&element : __container) {
+      if (first) {
+        first = false;
+        ss << element;
+      } else {
+        ss << __delimiter << element;
+      }
+    }
+    return ss.str();
+  }
 }
 
 namespace nlohmann::validation {
@@ -41,7 +57,6 @@ enum struct value_t : std::uint8_t {
   number_unsigned = (1 << 6),
   number_float    = (1 << 7),
   number          = number_integer | number_unsigned | number_float,
-  any             = null | array | string | boolean | number
 };
 
 inline const char * value_type_name(value_t vt) noexcept {
@@ -57,8 +72,6 @@ inline const char * value_type_name(value_t vt) noexcept {
     default: {
       if (static_cast<std::uint8_t>(vt) & static_cast<std::uint8_t>(value_t::number))
         return "number";
-      if (static_cast<std::uint8_t>(vt) & static_cast<std::uint8_t>(value_t::any))
-        return "any";
       return "undefined";
     }
   }
@@ -93,7 +106,7 @@ constexpr inline value_t to_value_type(detail::value_t dvt) noexcept {
 }
 
 constexpr inline bool operator==(value_t vt, detail::value_t dvt) {
-  return (static_cast<std::uint8_t>(vt) & static_cast<std::uint8_t>(to_value_type(dvt))) != 0;
+  return static_cast<std::uint8_t>(vt) & static_cast<std::uint8_t>(to_value_type(dvt));
 }
 
 constexpr inline bool operator!=(value_t vt, detail::value_t dvt) {
@@ -127,7 +140,7 @@ struct errors_collector_t {
   }
 
   template<typename ...TArgs>
-  void emplace_stream(TArgs &&...args) {
+  void emplace_streamed(TArgs &&...args) {
     emplace(detail::concat_stream(std::forward<TArgs>(args)...));
   }
 
@@ -154,14 +167,14 @@ struct rule_base {
   virtual bool operator() (const nlohmann::json &json, errors_collector_t &errors) const = 0;
 };
 
-struct size_rule : public rule_base {
-  size_rule(size_t size) : _size{size} {}
+struct of_size_rule : public rule_base {
+  of_size_rule(size_t size) : _size{size} {}
 
   bool operator() (const nlohmann::json &json, errors_collector_t &errors) const override {
     if (json.size() == _size)
       return true;
 
-    errors.emplace_stream("missing required size: ", _size);
+    errors.emplace_streamed("not of size: ", _size);
     return false;
   }
 
@@ -173,14 +186,16 @@ private:
   size_t _size;
 };
 
-struct type_rule : public rule_base {
-  type_rule(value_t type) : _type{type} {}
+struct of_type_rule : public rule_base {
+  of_type_rule(value_t type)
+    : _type{std::move(type)}
+  {}
 
   bool operator() (const nlohmann::json &json, errors_collector_t &errors) const override {
     if (json.type() == _type)
       return true;
 
-    errors.emplace_stream("missing required type: ", std::quoted(value_type_name(_type)));
+    errors.emplace_streamed("not of type: ", value_type_name(_type));
     return false;
   }
 
@@ -190,6 +205,54 @@ struct type_rule : public rule_base {
 
 private:
   value_t _type;
+};
+
+template<typename T>
+struct in_range_rule : public of_type_rule {
+  in_range_rule(std::optional<T> min, std::optional<T> max, value_t type)
+    : of_type_rule{std::move(type)}
+    , _min{std::move(min)}
+    , _max{std::move(max)}
+  {}
+
+  bool operator() (const nlohmann::json & json, errors_collector_t &errors) const override {
+    if (!of_type_rule::operator()(json, errors))
+      return false;
+
+    auto value = json.get<T>();
+    if ((_min && value < _min) || (_max && value > _max)) {
+      errors.emplace_streamed(
+        "not in range: [",
+          (_min ? std::to_string(*_min) : "inf"), ", ",
+          (_max ? std::to_string(*_max) : "inf"),
+        "]"
+      );
+      return false;
+    }
+    return true;
+  }
+
+protected:
+  std::optional<T> _min;
+  std::optional<T> _max;
+};
+
+template<typename T>
+struct in_set_rule : public rule_base {
+  in_set_rule(std::initializer_list<T> values)
+    : _values{std::move(values)}
+  {}
+
+  bool operator() (const nlohmann::json & json, errors_collector_t &errors) const override {
+    if (!_values.count(json.get<T>())) {
+      errors.emplace_streamed("not in set: [", detail::to_string_streamed(_values), "]");
+      return false;
+    }
+    return true;
+  }
+
+protected:
+  std::unordered_set<T> _values;
 };
 
 struct processor {
@@ -207,45 +270,56 @@ public:
   {}
 
   processor & with_value(const std::string &name) {
-    auto &&[it, emplaced] = _sub_processors.try_emplace(name, new processor(this, name));
+    auto &&[it, _0] = _sub_processors.try_emplace(name, new processor(this, name));
     return *it->second;
   }
 
   processor & with_object(const std::string &name) {
-    return with_value(name).with_type(value_t::object);
+    return with_value(name).of_type(value_t::object);
   }
 
   processor & with_array(const std::string &name) {
-    return with_value(name).with_type(value_t::array);
+    return with_value(name).of_type(value_t::array);
   }
 
   processor & with_string(const std::string &name) {
-    return with_value(name).with_type(value_t::string);
+    return with_value(name).of_type(value_t::string);
   }
 
   processor & with_boolean(const std::string &name) {
-    return with_value(name).with_type(value_t::boolean);
+    return with_value(name).of_type(value_t::boolean);
   }
 
   processor & with_number(const std::string &name) {
-    return with_value(name).with_type(value_t::number);
+    return with_value(name).of_type(value_t::number);
   }
+
 
   template<typename TRule, typename ...TArgs>
   processor & with_rule(TArgs &&...args) {
-    _rules.emplace_back(new TRule(std::forward<TArgs>(args)...));
+    _rules.emplace_back(new TRule{std::forward<TArgs>(args)...});
     return *this;
   }
 
-  processor & with_type(value_t type) {
-    return with_rule<type_rule>(type);
+  processor & of_type(value_t type) {
+    return with_rule<of_type_rule>(type);
   }
 
-  processor & with_size(size_t size) {
-    return with_rule<size_rule>(size);
+  processor & of_size(size_t size) {
+    return with_rule<of_size_rule>(size);
   }
 
-  processor & next() {
+  template<typename T>
+  processor & in_range(std::optional<T> min, std::optional<T> max, value_t type = value_t::number) {
+    return with_rule<in_range_rule<T>>(std::move(min), std::move(max), std::move(type));
+  }
+
+  template<typename T>
+  processor & in_set(std::initializer_list<T> init) {
+    return with_rule<in_set_rule<T>>(std::move(init));
+  }
+
+  processor & back() {
     return _owner ? *_owner : *this;
   }
 
@@ -263,7 +337,7 @@ public:
     for (auto &&[sub_key, sub_processor] : _sub_processors) {
       if (!json.contains(sub_key)) {
         if (!sub_processor->_optional)
-          collector.emplace_stream("missing required value: ", std::quoted(sub_key));
+          collector.emplace_streamed("missing required value: ", std::quoted(sub_key));
 
         continue;
       }
@@ -296,31 +370,31 @@ inline processor value() {
 
 inline processor object() {
   processor p;
-  p.with_type(value_t::object);
+  p.of_type(value_t::object);
   return p;
 }
 
 inline processor array() {
   processor p;
-  p.with_type(value_t::array);
+  p.of_type(value_t::array);
   return p;
 }
 
 inline processor string() {
   processor p;
-  p.with_type(value_t::string);
+  p.of_type(value_t::string);
   return p;
 }
 
 inline processor boolean() {
   processor p;
-  p.with_type(value_t::boolean);
+  p.of_type(value_t::boolean);
   return p;
 }
 
 inline processor number() {
   processor p;
-  p.with_type(value_t::number);
+  p.of_type(value_t::number);
   return p;
 }
 
