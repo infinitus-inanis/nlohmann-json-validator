@@ -130,6 +130,7 @@ private:
 
 using errors_t = std::vector<error_t>;
 using errors_map_t = std::map<json::json_pointer, errors_t>;
+using ignored_t = std::vector<json::json_pointer>;
 
 struct processor;
 struct errors_collector_t {
@@ -259,9 +260,9 @@ struct processor {
 private:
   processor(processor *owner, const std::string &name)
     : _owner{owner}
-    , _pointer{owner->_pointer}
+    , _pointer{owner->_pointer / name}
     , _optional{false}
-  { _pointer.push_back(name); }
+  {}
 
 public:
   processor()
@@ -352,6 +353,31 @@ public:
     return exec(json, errors);
   }
 
+  bool exec(const nlohmann::json &json, errors_map_t &errors, ignored_t &ignored) {
+    errors_collector_t collector{_pointer, errors};
+    for (auto &&rule : _rules)
+      (*rule)(json, collector);
+
+    for (auto &&[sub_key, sub_json] : json.items()) {
+      if (sub_key.empty())
+        continue;
+      if (!_sub_processors.contains(sub_key)) {
+        ignored.push_back(_pointer / sub_key);
+        continue;
+      }
+      _sub_processors[sub_key]->exec(sub_json, errors, ignored);
+    }
+    for (auto &&[sub_key, sub_processor] : _sub_processors) {
+      if (sub_processor->_executed)
+        continue;
+      if (sub_processor->_optional)
+        continue;
+      collector.emplace_streamed("missing required value: ", std::quoted(sub_key));
+    }
+    _executed = true;
+    return errors.empty();
+  }
+
 private:
   using rules = std::vector<std::unique_ptr<rule_base>>;
   using sub_processors = std::unordered_map<std::string, std::unique_ptr<processor>>;
@@ -360,6 +386,7 @@ private:
   processor          *_owner;
   json::json_pointer  _pointer;
   bool                _optional;
+  bool                _executed;
   rules               _rules;
   sub_processors      _sub_processors;
 };

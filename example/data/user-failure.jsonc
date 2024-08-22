@@ -3,9 +3,11 @@
   "name": null,            // fail: is not 'string'
   // "surname": "Andalie", // pass: is optional
   "auth": {
-    "nick": "miss"         // fail: is not in provided set
+    "nick": "miss",        // fail: is not in provided set
+    "skip": null           // skip
     // "pass": "none"      // fail: is required
   },
   "enabled": false,        // pass
-  "ignored": null          // skip
+  "nothing": null,         // skip
+  "tokens": []
 }

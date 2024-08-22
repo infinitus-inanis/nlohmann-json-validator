@@ -6,5 +6,8 @@
     "nick": "atom",
     "pass": "none"
   },
-  "enabled": true
+  "enabled": true,
+  "tokens": [
+    "0", "1", "2"
+  ]
 }
