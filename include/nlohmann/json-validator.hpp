@@ -361,11 +361,13 @@ public:
     for (auto &&[sub_key, sub_json] : json.items()) {
       if (sub_key.empty())
         continue;
-      if (!_sub_processors.contains(sub_key)) {
+
+      auto it = _sub_processors.find(sub_key);
+      if (it == _sub_processors.end()) {
         ignored.push_back(_pointer / sub_key);
         continue;
       }
-      _sub_processors[sub_key]->exec(sub_json, errors, ignored);
+      it->second->exec(sub_json, errors, ignored);
     }
     for (auto &&[sub_key, sub_processor] : _sub_processors) {
       if (sub_processor->_executed)
