@@ -9,5 +9,6 @@
   },
   "enabled": false,        // pass
   "nothing": null,         // skip
-  "tokens": []
+  "tokens": [],
+  "tags": [ "kek" ]
 }

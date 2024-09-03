@@ -34,7 +34,8 @@ int main(int argc, char **argv) {
       .with_string("pass").back()
       .back()
     .with_boolean("enabled").back()
-    .with_array("tokens").back()
+    .with_array("tokens").of_size(1, {}).back()
+    .with_array("tags").of_size(2).back()
     .exec(data, errors_map, ignored);
 
   if (!errors_map.empty()) {

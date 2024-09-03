@@ -9,5 +9,8 @@
   "enabled": true,
   "tokens": [
     "0", "1", "2"
+  ],
+  "tags": [
+    "hack", "tori"
   ]
 }

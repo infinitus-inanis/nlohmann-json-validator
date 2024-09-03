@@ -160,7 +160,7 @@ private:
 enum struct rule_t {
   size,
   type,
-  custom
+  custom,
 };
 
 struct rule_base {
@@ -168,15 +168,52 @@ struct rule_base {
   virtual bool operator() (const nlohmann::json &json, errors_collector_t &errors) const = 0;
 };
 
+template<typename T>
+bool in_range_impl(std::optional<T> min, std::optional<T> max, T &&val) {
+  return !((min && val < min) || (max && val > max));
+}
+
+template<typename T>
+std::string in_range_error(std::optional<T> min, std::optional<T> max) {
+  return detail::concat_stream(
+    "not in range: [",
+      (min ? std::to_string(*min) : "inf"), ", ",
+      (max ? std::to_string(*max) : "inf"),
+    "]"
+  );
+}
+
 struct of_size_rule : public rule_base {
-  of_size_rule(size_t size) : _size{size} {}
+  of_size_rule(size_t exact)
+    : _mode{mode::exact}
+    , _size{.exact = exact}
+  {}
+
+  of_size_rule(std::optional<size_t> min, std::optional<size_t> max)
+    : _mode{mode::range}
+    , _size{.range = { min, max }}
+  {}
 
   bool operator() (const nlohmann::json &json, errors_collector_t &errors) const override {
-    if (json.size() == _size)
-      return true;
+    switch (_mode) {
+      case mode::exact:
+        if (_size.exact != json.size()) {
+          errors.emplace_streamed("size is not: ", _size.exact);
+          return false;
+        }
+        return true;
 
-    errors.emplace_streamed("not of size: ", _size);
-    return false;
+      case mode::range:
+        if (!in_range_impl(_size.range.min, _size.range.max, json.size())) {
+          errors.emplace_streamed("size is ", in_range_error(_size.range.min, _size.range.max));
+          return false;
+        }
+        return true;
+
+      default:
+        errors.emplace_streamed("invalid 'of_size_rule' configuration");
+        return false;
+    }
   }
 
   constexpr rule_t type() const override {
@@ -184,7 +221,18 @@ struct of_size_rule : public rule_base {
   }
 
 private:
-  size_t _size;
+  enum struct mode {
+    range,
+    exact
+  };
+  mode _mode;
+  union {
+    struct {
+      std::optional<size_t> min;
+      std::optional<size_t> max;
+    } range;
+    size_t exact;
+  } _size;
 };
 
 struct of_type_rule : public rule_base {
@@ -193,11 +241,11 @@ struct of_type_rule : public rule_base {
   {}
 
   bool operator() (const nlohmann::json &json, errors_collector_t &errors) const override {
-    if (json.type() == _type)
-      return true;
-
-    errors.emplace_streamed("not of type: ", value_type_name(_type));
-    return false;
+    if (json.type() != _type) {
+      errors.emplace_streamed("value is not of type: ", value_type_name(_type));
+      return false;
+    }
+    return true;
   }
 
   constexpr rule_t type() const override {
@@ -216,18 +264,12 @@ struct in_range_rule : public of_type_rule {
     , _max{std::move(max)}
   {}
 
-  bool operator() (const nlohmann::json & json, errors_collector_t &errors) const override {
+  bool operator() (const nlohmann::json &json, errors_collector_t &errors) const override {
     if (!of_type_rule::operator()(json, errors))
       return false;
 
-    auto value = json.get<T>();
-    if ((_min && value < _min) || (_max && value > _max)) {
-      errors.emplace_streamed(
-        "not in range: [",
-          (_min ? std::to_string(*_min) : "inf"), ", ",
-          (_max ? std::to_string(*_max) : "inf"),
-        "]"
-      );
+    if (!in_range_impl(_min, _max, json.get<T>())) {
+      errors.emplace_streamed("value is ", in_range_error(_min, _max));
       return false;
     }
     return true;
@@ -239,14 +281,18 @@ protected:
 };
 
 template<typename T>
-struct in_set_rule : public rule_base {
-  in_set_rule(std::initializer_list<T> values)
-    : _values{std::move(values)}
+struct in_set_rule : public of_type_rule {
+  in_set_rule(std::initializer_list<T> values, value_t type)
+    : of_type_rule{std::move(type)}
+    , _values{std::move(values)}
   {}
 
-  bool operator() (const nlohmann::json & json, errors_collector_t &errors) const override {
+  bool operator() (const nlohmann::json &json, errors_collector_t &errors) const override {
+    if (!of_type_rule::operator()(json, errors))
+      return false;
+
     if (!_values.count(json.get<T>())) {
-      errors.emplace_streamed("not in set: [", detail::to_string_streamed(_values), "]");
+      errors.emplace_streamed("value is not in set: [", detail::to_string_streamed(_values), "]");
       return false;
     }
     return true;
@@ -295,7 +341,6 @@ public:
     return with_value(name).of_type(value_t::number);
   }
 
-
   template<typename TRule, typename ...TArgs>
   processor & with_rule(TArgs &&...args) {
     _rules.emplace_back(new TRule{std::forward<TArgs>(args)...});
@@ -310,14 +355,18 @@ public:
     return with_rule<of_size_rule>(size);
   }
 
+  processor & of_size(std::optional<size_t> min, std::optional<size_t> max) {
+    return with_rule<of_size_rule>(std::move(min), std::move(max));
+  }
+
   template<typename T>
   processor & in_range(std::optional<T> min, std::optional<T> max, value_t type = value_t::number) {
     return with_rule<in_range_rule<T>>(std::move(min), std::move(max), std::move(type));
   }
 
   template<typename T>
-  processor & in_set(std::initializer_list<T> init) {
-    return with_rule<in_set_rule<T>>(std::move(init));
+  processor & in_set(std::initializer_list<T> init, value_t type = value_t::string) {
+    return with_rule<in_set_rule<T>>(std::move(init), std::move(type));
   }
 
   processor & back() {
