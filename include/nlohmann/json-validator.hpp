@@ -169,7 +169,7 @@ struct rule_base {
 };
 
 template<typename T>
-bool in_range_impl(std::optional<T> min, std::optional<T> max, T &&val) {
+bool in_range(const std::optional<T> min, const std::optional<T> max, const T &val) {
   return !((min && val < min) || (max && val > max));
 }
 
@@ -204,7 +204,7 @@ struct of_size_rule : public rule_base {
         return true;
 
       case mode::range:
-        if (!in_range_impl(_size.range.min, _size.range.max, json.size())) {
+        if (!in_range(_size.range.min, _size.range.max, json.size())) {
           errors.emplace_streamed("size is ", in_range_error(_size.range.min, _size.range.max));
           return false;
         }
@@ -268,7 +268,7 @@ struct in_range_rule : public of_type_rule {
     if (!of_type_rule::operator()(json, errors))
       return false;
 
-    if (!in_range_impl(_min, _max, json.get<T>())) {
+    if (!in_range(_min, _max, json.get<T>())) {
       errors.emplace_streamed("value is ", in_range_error(_min, _max));
       return false;
     }
