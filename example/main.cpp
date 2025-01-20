@@ -38,19 +38,6 @@ int main(int argc, char **argv) {
     .with_array("tags").of_size(2).back()
     .exec(data, errors_map, ignored);
 
-  object() >
-    number("id") | in_range<int32_t>(0, 10) <
-    string("name") <
-    string("surname") | optional() <
-    object("auth") >
-      string("nick") | in_set<std::string>({"atom"}) <
-      string("pass") <
-    boolean("enabled") <
-    array("tokens") | of_size(1, std::nullopt) <
-    array("tags") | of_size(2) <
-    process(data, errors_map, ignored);
-
-
   if (!errors_map.empty()) {
     std::cout << "validation failure:\n";
     for (auto &&[pointer, errors] : errors_map) {
